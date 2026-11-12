@@ -1,19 +1,36 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { signIn, signOut } from "next-auth/react";
 
 type Done = Record<string, number>; // lesson id -> completed at (ms)
 type Notes = Record<string, string>;
+export type User = { name: string | null; image: string | null };
 
-const DONE_KEY = "roadmap.done.v1";
-const NOTES_KEY = "roadmap.notes.v1";
+type State = {
+  status: "loading" | "anon" | "user" | "error";
+  user: User | null;
+  done: Done;
+  notes: Notes;
+  prompt: boolean; // show the "sign in to save" dialog
+};
+
+// Pre-auth versions stored progress in the browser; it is merged into the account on first sign-in.
+const LEGACY_DONE = "roadmap.done.v1";
+const LEGACY_NOTES = "roadmap.notes.v1";
 const LAST_KEY = "roadmap.last.v1";
 
-const EMPTY: Done = {};
+const SERVER: State = { status: "loading", user: null, done: {}, notes: {}, prompt: false };
+let state: State = SERVER;
+let started = false;
 const listeners = new Set<() => void>();
-let cache: Done | null = null;
 
-function read<T>(key: string, fallback: T): T {
+function set(patch: Partial<State>) {
+  state = { ...state, ...patch };
+  listeners.forEach((l) => l());
+}
+
+function readLocal<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
@@ -22,102 +39,140 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 
-function write(key: string, value: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* storage blocked; progress stays in memory for this tab */
+async function api(body: unknown) {
+  const res = await fetch("/api/progress", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    set({ status: "anon", user: null, done: {}, notes: {}, prompt: true });
+    throw new Error("Signed out");
   }
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Save failed");
 }
 
-function getDone(): Done {
-  if (cache === null) cache = read<Done>(DONE_KEY, {});
-  return cache;
-}
+async function load() {
+  try {
+    const res = await fetch("/api/progress", { cache: "no-store" });
+    const data = (await res.json()) as { user: User | null; done?: Done; notes?: Notes };
+    if (!data.user) return set({ status: "anon", user: null, done: {}, notes: {} });
 
-function emit() {
-  listeners.forEach((l) => l());
+    const legacyDone = readLocal<Done>(LEGACY_DONE, {});
+    const legacyNotes = readLocal<Notes>(LEGACY_NOTES, {});
+    if (Object.keys(legacyDone).length || Object.keys(legacyNotes).length) {
+      await api({ op: "merge", done: legacyDone, notes: legacyNotes });
+      try {
+        localStorage.removeItem(LEGACY_DONE);
+        localStorage.removeItem(LEGACY_NOTES);
+      } catch {}
+      return load();
+    }
+    set({ status: "user", user: data.user, done: data.done ?? {}, notes: data.notes ?? {} });
+  } catch {
+    set({ status: "error" });
+  }
 }
 
 function subscribe(cb: () => void) {
   listeners.add(cb);
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === DONE_KEY) {
-      cache = null;
-      cb();
-    }
-  };
-  window.addEventListener("storage", onStorage);
-  return () => {
-    listeners.delete(cb);
-    window.removeEventListener("storage", onStorage);
-  };
+  if (!started) {
+    started = true;
+    void load();
+  }
+  return () => listeners.delete(cb);
+}
+
+const snap = () => state;
+const serverSnap = () => SERVER;
+
+export function useProgress(): State {
+  return useSyncExternalStore(subscribe, snap, serverSnap);
 }
 
 export function useDone(): Done {
-  return useSyncExternalStore(subscribe, getDone, () => EMPTY);
+  return useProgress().done;
+}
+
+function needUser() {
+  if (state.status === "user") return true;
+  if (state.status !== "loading") set({ prompt: true });
+  return false;
+}
+
+export function closePrompt() {
+  set({ prompt: false });
+}
+
+export function startSignIn() {
+  void signIn("github", { redirectTo: window.location.href });
+}
+
+export function startSignOut() {
+  void signOut({ redirectTo: window.location.pathname });
 }
 
 export function setDone(id: string, value: boolean) {
-  const next = { ...getDone() };
-  if (value) next[id] = Date.now();
+  if (!needUser()) return;
+  const prev = state.done;
+  const next = { ...prev };
+  if (value) next[id] = next[id] ?? Date.now();
   else delete next[id];
-  cache = next;
-  write(DONE_KEY, next);
-  emit();
+  set({ done: next });
+  api({ op: "set", id, value }).catch(() => set({ done: prev }));
 }
 
 export function toggleDone(id: string) {
-  setDone(id, !getDone()[id]);
+  setDone(id, !state.done[id]);
 }
 
 export function setMany(ids: string[], value: boolean) {
-  const next = { ...getDone() };
+  if (!needUser()) return;
+  const prev = state.done;
+  const next = { ...prev };
+  const now = Date.now();
   for (const id of ids) {
-    if (value) next[id] = next[id] ?? Date.now();
+    if (value) next[id] = next[id] ?? now;
     else delete next[id];
   }
-  cache = next;
-  write(DONE_KEY, next);
-  emit();
+  set({ done: next });
+  api({ op: "bulk", ids, value }).catch(() => set({ done: prev }));
 }
 
-export function getNote(id: string) {
-  return read<Notes>(NOTES_KEY, {})[id] ?? "";
-}
-
-export function saveNote(id: string, text: string) {
-  const notes = read<Notes>(NOTES_KEY, {});
-  if (text.trim()) notes[id] = text;
-  else delete notes[id];
-  write(NOTES_KEY, notes);
-}
-
-export function setLast(courseSlug: string, lessonSlug: string) {
-  const last = read<Record<string, string>>(LAST_KEY, {});
-  last[courseSlug] = lessonSlug;
-  write(LAST_KEY, last);
-}
-
-export function getLast(courseSlug: string): string | undefined {
-  return read<Record<string, string>>(LAST_KEY, {})[courseSlug];
-}
-
-export function exportProgress() {
-  return JSON.stringify(
-    { version: 1, exportedAt: new Date().toISOString(), done: getDone(), notes: read<Notes>(NOTES_KEY, {}) },
-    null,
-    2,
+export function saveNote(id: string, text: string): Promise<boolean> {
+  if (!needUser()) return Promise.resolve(false);
+  const prev = state.notes;
+  const next = { ...prev };
+  if (text.trim()) next[id] = text;
+  else delete next[id];
+  set({ notes: next });
+  return api({ op: "note", id, text }).then(
+    () => true,
+    () => {
+      set({ notes: prev });
+      return false;
+    },
   );
 }
 
-export function importProgress(json: string) {
+export function setLast(courseSlug: string, lessonSlug: string) {
+  const last = readLocal<Record<string, string>>(LAST_KEY, {});
+  last[courseSlug] = lessonSlug;
+  try {
+    localStorage.setItem(LAST_KEY, JSON.stringify(last));
+  } catch {}
+}
+
+export function exportProgress() {
+  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), done: state.done, notes: state.notes }, null, 2);
+}
+
+export async function importProgress(json: string) {
+  if (!needUser()) throw new Error("Sign in first");
   const data = JSON.parse(json) as { done?: Done; notes?: Notes };
   if (!data || typeof data !== "object" || typeof data.done !== "object") throw new Error("Not a progress file");
-  cache = { ...getDone(), ...data.done };
-  write(DONE_KEY, cache);
-  if (data.notes) write(NOTES_KEY, { ...read<Notes>(NOTES_KEY, {}), ...data.notes });
-  emit();
+  await api({ op: "merge", done: data.done, notes: data.notes ?? {} });
+  await load();
 }
 
 /** Days with at least one completion, counting back from today. */

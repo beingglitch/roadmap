@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { courses } from "@/lib/courses";
 import { useDone } from "@/lib/progress";
+import { AccountButton } from "./Account";
 import { ChevronDown, Chevron, Mark, Menu, Moon, Sun } from "./Icons";
 
 function ThemeToggle() {
@@ -134,6 +135,7 @@ export function TopBar({
       <div className="top-right">
         <ProgressLink />
         <ThemeToggle />
+        <AccountButton />
       </div>
     </header>
   );

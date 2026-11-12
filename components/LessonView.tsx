@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getCourse } from "@/lib/courses";
-import { getNote, saveNote, setDone, setLast, toggleDone, useDone } from "@/lib/progress";
+import { saveNote, setDone, setLast, toggleDone, useProgress } from "@/lib/progress";
 import { Arrow, Book, Check, ChevronLeft, Chevron, Diagram, Ext, Link2, Note, Play, Video } from "./Icons";
 
 export function LessonView({ courseSlug, lessonSlug }: { courseSlug: string; lessonSlug: string }) {
@@ -15,7 +15,7 @@ export function LessonView({ courseSlug, lessonSlug }: { courseSlug: string; les
   const next = course.lessons[lesson.index + 1];
   const posInChapter = chapter.lessons.findIndex((l) => l.id === lesson.id) + 1;
 
-  const done = useDone();
+  const { done, notes, status } = useProgress();
   const isDone = !!done[lesson.id];
   const router = useRouter();
   const [tab, setTab] = useState<"study" | "notes">("study");
@@ -27,9 +27,14 @@ export function LessonView({ courseSlug, lessonSlug }: { courseSlug: string; les
 
   useEffect(() => {
     setLast(course.slug, lesson.slug);
-    setNote(getNote(lesson.id));
+  }, [course.slug, lesson.slug]);
+
+  // Load the saved note when the lesson changes or once the account finishes loading.
+  useEffect(() => {
+    setNote(notes[lesson.id] ?? "");
     setSaved(false);
-  }, [course.slug, lesson.slug, lesson.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson.id, status]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -158,7 +163,7 @@ export function LessonView({ courseSlug, lessonSlug }: { courseSlug: string; les
           <h2>
             <Note /> Notes
           </h2>
-          <p className="hint">Saved in this browser. Write the one diagram or number you want to remember.</p>
+          <p className="hint">Saved to your account. Write the one diagram or number you want to remember.</p>
           <textarea
             value={note}
             onChange={(e) => {
@@ -166,12 +171,12 @@ export function LessonView({ courseSlug, lessonSlug }: { courseSlug: string; les
               setSaved(false);
             }}
             onBlur={() => {
-              saveNote(lesson.id, note);
-              setSaved(true);
+              if (note === (notes[lesson.id] ?? "")) return;
+              saveNote(lesson.id, note).then(setSaved);
             }}
-            placeholder="Key idea, tradeoff, numbers, links…"
+            placeholder={status === "user" ? "Key idea, tradeoff, numbers, links…" : "Sign in to keep notes"}
           />
-          <div className="saved">{saved ? "Saved" : "Saves when you click away"}</div>
+          <div className="saved">{saved ? "Saved to your account" : "Saves when you click away"}</div>
         </section>
       )}
 

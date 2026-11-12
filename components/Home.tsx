@@ -51,8 +51,8 @@ export function Home() {
               Learn it in order, <em>check it off.</em>
             </h1>
             <p>
-              Six tracks, one lesson at a time. Every lesson has a video first, then diagrams and text. Progress is saved in
-              this browser; export it to move between devices.
+              Six tracks, one lesson at a time. Every lesson has a video first, then diagrams and text. Sign in with GitHub and
+              your progress syncs to your account on every device.
             </p>
             <div className="stats">
               <div className="card stat">
@@ -151,7 +151,7 @@ export function Home() {
 
           <div className="section-title">
             <h2>Progress backup</h2>
-            <span>Move your checkboxes between laptop and phone</span>
+            <span>Download a copy of your progress, or import an old export</span>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <button className="btn small" onClick={download}>
