@@ -27,6 +27,33 @@ function ThemeToggle() {
   );
 }
 
+function ProgressLink() {
+  const done = useDone();
+  const total = courses.reduce((n, c) => n + c.lessons.length, 0);
+  const n = courses.reduce((k, c) => k + c.lessons.filter((l) => done[l.id]).length, 0);
+  const p = total ? Math.round((n / total) * 100) : 0;
+  return (
+    <Link href="/progress" className="btn small" title="See your progress">
+      <svg width="16" height="16" viewBox="0 0 36 36" aria-hidden="true">
+        <circle cx="18" cy="18" r="14" fill="none" stroke="var(--line-strong)" strokeWidth="4" />
+        <circle
+          cx="18"
+          cy="18"
+          r="14"
+          fill="none"
+          stroke="var(--done)"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeDasharray={`${(p / 100) * 88} 88`}
+          transform="rotate(-90 18 18)"
+        />
+      </svg>
+      <span className="mono">{p}%</span>
+      <span className="hide-sm">Progress</span>
+    </Link>
+  );
+}
+
 export function CourseSwitcher({ current }: { current?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -105,6 +132,7 @@ export function TopBar({
         </nav>
       )}
       <div className="top-right">
+        <ProgressLink />
         <ThemeToggle />
       </div>
     </header>

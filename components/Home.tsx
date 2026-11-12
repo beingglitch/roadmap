@@ -69,6 +69,10 @@ export function Home() {
                 <b className="mono">{today}</b>
                 <span>done today</span>
               </div>
+              <Link href="/progress" className="card stat" style={{ display: "grid", alignContent: "center" }}>
+                <b className="mono">{Math.round((doneCount / totalLessons) * 100)}%</b>
+                <span>covered · see tracking →</span>
+              </Link>
             </div>
           </section>
 

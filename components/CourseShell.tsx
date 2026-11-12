@@ -47,6 +47,27 @@ export function CourseShell({ slug, children }: { slug: string; children: React.
       <TopBar course={course.slug} crumbs={crumbs} onMenu={() => setMenu(!menu)} />
       <div className="shell">
         <aside className={`side ${menu ? "open" : ""}`} aria-label="Curriculum">
+          <div className="side-progress">
+            {(() => {
+              const n = course.lessons.filter((l) => done[l.id]).length;
+              const p = Math.round((n / course.lessons.length) * 100);
+              return (
+                <>
+                  <div className="row-l">
+                    <span>
+                      {n}/{course.lessons.length} {course.unitLabel}
+                    </span>
+                    <span className="mono" style={{ color: "var(--fg)" }}>
+                      {p}%
+                    </span>
+                  </div>
+                  <div className="bar">
+                    <span style={{ width: `${p}%` }} />
+                  </div>
+                </>
+              );
+            })()}
+          </div>
           <div className="side-label mono">Workspace</div>
           <Link href={`/${course.slug}`} className={`side-link ${!active ? "active" : ""}`}>
             <Home /> Overview
