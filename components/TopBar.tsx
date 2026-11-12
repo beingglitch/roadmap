@@ -10,7 +10,7 @@ function ThemeToggle() {
   const [dark, setDark] = useState<boolean | null>(null);
   useEffect(() => {
     const t = document.documentElement.dataset.theme;
-    setDark(t ? t === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches);
+    setDark(t === "dark");
   }, []);
   const flip = () => {
     const next = dark ? "light" : "dark";
